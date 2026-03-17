@@ -1,12 +1,28 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import List
+from pathlib import Path
 from .database import get_db, settings
 from . import schemas, crud, auth, models
 
 app = FastAPI(title="Task Manager API")
+
+# Mount frontend static files
+frontend_path = Path(__file__).parent.parent.parent / "frontend"
+if frontend_path.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+
+@app.get("/")
+async def read_root():
+    """Serve the frontend index.html for SPA routing"""
+    index_path = Path(__file__).parent.parent.parent / "frontend" / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    return {"message": "Task Manager API"}
 
 @app.post("/register", response_model=schemas.User)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
