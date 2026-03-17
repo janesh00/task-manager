@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        input, textarea, button { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .task { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .completed { text-decoration: line-through; opacity: 0.6; }
+        .error { color: red; }
+        .hidden { display: none; }
+        #tasks-list { max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>Task Manager</h1>
+
+    <!-- Auth Section -->
+    <div id="auth-section" class="section">
+        <h2>Login / Register</h2>
+        <input type="email" id="email" placeholder="Email" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button onclick="register()">Register</button>
+        <button onclick="login()">Login</button>
+        <p id="auth-message"></p>
+    </div>
+
+    <!-- Tasks Section -->
+    <div id="tasks-section" class="section hidden">
+        <h2>My Tasks</h2>
+        <input type="text" id="task-title" placeholder="Task title">
+        <textarea id="task-desc" placeholder="Description (optional)"></textarea>
+        <button onclick="createTask()">Add Task</button>
+        
+        <div>
+            <label>Filter: </label>
+            <select id="filter-completed" onchange="loadTasks()">
+                <option value="">All</option>
+                <option value="true">Completed</option>
+                <option value="false">Pending</option>
+            </select>
+        </div>
+
+        <div id="tasks-list"></div>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <script>
+        // Use window.location.origin for dynamic API URL
+        const API_BASE = window.location.origin.includes('3000') 
+            ? 'http://localhost:8000'
+            : `${window.location.origin}`;
+        
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+
+        if (token) {
+            loadTasks();
+            showTasksSection();
+        }
+
+        async function apiCall(endpoint, options = {}) {
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            const res = await fetch(`${API_BASE}${endpoint}`, {
+                ...options,
+                headers
+            });
+            if (res.status === 401) {
+                logout();
+                throw new Error('Unauthorized');
+            }
+            if (!res.ok) {
+                throw new Error(await res.text());
+            }
+            return res.json();
+        }
+
+        async function register() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            try {
+                await apiCall('/register', {
+                    method: 'POST',
+                    body: JSON.stringify({email, password})
+                });
+                showMessage('Registered! Please login.', 'green');
+            } catch (err) {
+                showMessage(err.message, 'red');
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            try {
+                const data = await apiCall('/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({username: email, password})
+                });
+                token = data.access_token;
+                localStorage.setItem('token', token);
+                showTasksSection();
+                loadTasks();
+            } catch (err) {
+                showMessage(err.message, 'red');
+            }
+        }
+
+        async function createTask() {
+            const title = document.getElementById('task-title').value;
+            const description = document.getElementById('task-desc').value;
+            try {
+                await apiCall('/tasks', {
+                    method: 'POST',
+                    body: JSON.stringify({title, description})
+                });
+                document.getElementById('task-title').value = '';
+                document.getElementById('task-desc').value = '';
+                loadTasks();
+            } catch (err) {
+                showMessage(err.message, 'red');
+            }
+        }
+
+        async function loadTasks() {
+            const completed = document.getElementById('filter-completed').value;
+            try {
+                const tasks = await apiCall(`/tasks?completed=${completed}`);
+                const list = document.getElementById('tasks-list');
+                list.innerHTML = tasks.map(task => `
+                    <div class="task ${task.completed ? 'completed' : ''}">
+                        <h4>${task.title}</h4>
+                        <p>${task.description || ''}</p>
+                        <button onclick="toggleTask(${task.id})">${task.completed ? 'Undo' : 'Complete'}</button>
+                        <button onclick="deleteTask(${task.id})" style="background: #dc3545;">Delete</button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                showMessage(err.message, 'red');
+            }
+        }
+
+        async function toggleTask(id) {
+            const tasks = await apiCall('/tasks');
+            const task = tasks.find(t => t.id === id);
+            await apiCall(`/tasks/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({completed: !task.completed})
+            });
+            loadTasks();
+        }
+
+        async function deleteTask(id) {
+            if (confirm('Delete task?')) {
+                await apiCall(`/tasks/${id}`, {method: 'DELETE'});
+                loadTasks();
+            }
+        }
+
+        function logout() {
+            token = null;
+            localStorage.removeItem('token');
+            showAuthSection();
+        }
+
+        function showAuthSection() {
+            document.getElementById('auth-section').classList.remove('hidden');
+            document.getElementById('tasks-section').classList.add('hidden');
+        }
+
+        function showTasksSection() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('tasks-section').classList.remove('hidden');
+        }
+
+        function showMessage(msg, color = 'black') {
+            const msgEl = document.getElementById('auth-message');
+            msgEl.textContent = msg;
+            msgEl.style.color = color;
+        }
+    </script>
+</body>
+</html>
