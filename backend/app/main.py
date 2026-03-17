@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import List
 from pathlib import Path
+import os
 from .database import get_db, settings
 from . import schemas, crud, auth, models
 
@@ -14,7 +15,10 @@ app = FastAPI(title="Task Manager API")
 # Mount frontend static files
 frontend_path = Path(__file__).parent.parent.parent / "frontend"
 if frontend_path.exists():
-    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+    try:
+        app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+    except Exception as e:
+        print(f"Warning: Could not mount static files: {e}")
 
 @app.get("/")
 async def read_root():
@@ -22,7 +26,7 @@ async def read_root():
     index_path = Path(__file__).parent.parent.parent / "frontend" / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path))
-    return {"message": "Task Manager API"}
+    return {"message": "Task Manager API - Frontend not found"}
 
 @app.post("/register", response_model=schemas.User)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
